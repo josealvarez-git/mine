@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+    echo 'Usage: ./main.sh "https://website.video/PAYPREMIUMv=VIDEO_ID"'
+    exit 1
+fi
+
+command -v yt-dlp >/dev/null || {
+    echo "Error: yt-dlp is not installed."
+    exit 1
+}
+
+command -v ffmpeg >/dev/null || {
+    echo "Error: ffmpeg is not installed."
+    exit 1
+}
+
+url="$1"
+
+before="$(mktemp)"
+after="$(mktemp)"
+trap 'rm -f "$before" "$after"' EXIT
+
+ls -1 *.mp4 2>/dev/null | sort > "$before" || true
+
+yt-dlp \
+    -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best" \
+    --merge-output-format mp4 \
+    -o "%(title).100s.%(ext)s" \
+    "$url"
+
+ls -1 *.mp4 2>/dev/null | sort > "$after" || true
+
+video="$(comm -13 "$before" "$after" | head -n1)"
+if [ -z "$video" ]; then
+    video="$(ls -t *.mp4 | head -n1)"
+fi
+
+                                                                                                                                       echo
+echo "Downloaded: $video"
+echo
+
+read -rp "Trim video? [y/N] " ans
+
+case "$ans" in
+    y|Y|yes|YES)
+        read -rp "Start time (HH:MM:SS): " start
+        read -rp "End time   (HH:MM:SS): " end
+
+                                                                                                   output="${video%.mp4}_trimmed.mp4"
+
+        ffmpeg \
+            -ss "$start" \
+            -to "$end" \
+            -i "$video" \
+            -c copy \
+            "$output"
+
+        echo
+        echo "Saved: $output"
+        ;;
+    *)
+        echo "Done."
+        ;;
+esac
