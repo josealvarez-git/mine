@@ -1,54 +1,63 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-if [ $# -ne 1 ]; then
-    echo 'Usage: ./main.sh "https://website.video/PAYPREMIUMv=VIDEO_ID"'
+if [ "$#" -ne 1 ]; then
+    echo 'Usage: readCode "https://video.nice/PayPremium?v=VIDEO_ID"'
     exit 1
 fi
 
-command -v yt-dlp >/dev/null || {
-    echo "Error: yt-dlp is not installed."
-    exit 1
+need() {
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "Error: $1 is not installed."
+        exit 1
+    }
 }
 
-command -v ffmpeg >/dev/null || {
-    echo "Error: ffmpeg is not installed."
-    exit 1
-}
+need yt-dlp
+need ffmpeg
 
-url="$1"
+url=$1
 
-before="$(mktemp)"
-after="$(mktemp)"
-trap 'rm -f "$before" "$after"' EXIT
+before=$(mktemp)
+after=$(mktemp)
 
-ls -1 *.mp4 2>/dev/null | sort > "$before" || true
+trap 'rm -f "$before" "$after"' EXIT HUP INT TERM
+
+find . -maxdepth 1 -type f -name '*.mp4' -print | sort > "$before"
 
 yt-dlp \
-    -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best" \
+    -f 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best' \
     --merge-output-format mp4 \
-    -o "%(title).100s.%(ext)s" \
+    -o '%(title).100s.%(ext)s' \
     "$url"
 
-ls -1 *.mp4 2>/dev/null | sort > "$after" || true
+find . -maxdepth 1 -type f -name '*.mp4' -print | sort > "$after"
 
-video="$(comm -13 "$before" "$after" | head -n1)"
+video=$(comm -13 "$before" "$after" | head -n 1)
+
 if [ -z "$video" ]; then
-    video="$(ls -t *.mp4 | head -n1)"
+    video=$(find . -maxdepth 1 -type f -name '*.mp4' -print | sort | tail -n 1)
 fi
 
-                                                                                                                                       echo
-echo "Downloaded: $video"
-echo
+if [ -z "$video" ]; then
+    echo "Error: could not find downloaded mp4."
+    exit 1
+fi
 
-read -rp "Trim video? [y/N] " ans
+printf '\nDownloaded: %s\n\n' "$video"
+
+printf 'Trim video? [y/N] '
+IFS= read -r ans
 
 case "$ans" in
     y|Y|yes|YES)
-        read -rp "Start time (HH:MM:SS): " start
-        read -rp "End time   (HH:MM:SS): " end
+        printf 'Start time, example 00:01:10: '
+        IFS= read -r start
 
-                                                                                                   output="${video%.mp4}_trimmed.mp4"
+        printf 'End time, example 00:02:45: '
+        IFS= read -r end
+
+        output=${video%.mp4}_trimmed.mp4
 
         ffmpeg \
             -ss "$start" \
@@ -57,8 +66,7 @@ case "$ans" in
             -c copy \
             "$output"
 
-        echo
-        echo "Saved: $output"
+        printf '\nSaved: %s\n' "$output"
         ;;
     *)
         echo "Done."
